@@ -51,6 +51,9 @@ pub struct Style {
     /// double action(click 1: select, click 2: edit) is required.
     pub single_click_edit_mode: bool,
 
+    /// When enabled, hide the index column.
+    pub hide_index_column: bool,
+
     /// How to align cell contents. Default is left-aligned.
     pub cell_align: egui::Align,
 
@@ -138,7 +141,11 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             Color32::GREEN
         };
 
-        let mut builder = egui_extras::TableBuilder::new(ui).column(Column::auto());
+        let mut builder = egui_extras::TableBuilder::new(ui);
+
+        if !self.style.hide_index_column {
+            builder = builder.column(Column::auto());
+        }
 
         let iter_vis_cols_with_flag = s
             .vis_cols()
@@ -163,9 +170,11 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             .max_scroll_height(f32::MAX)
             .sense(Sense::click_and_drag().tap_mut(|s| s.set(Sense::FOCUSABLE, true)))
             .header(20., |mut h| {
-                h.col(|_ui| {
-                    // TODO: Add `Configure Sorting` button
-                });
+                if !self.style.hide_index_column {
+                    h.col(|_ui| {
+                        // TODO: Add `Configure Sorting` button
+                    });
+                }
 
                 let has_any_hidden_col = s.vis_cols().len() != s.num_columns();
 
@@ -433,43 +442,49 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
             // Mark row background filled if being edited.
             row.set_selected(edit_state.is_some());
 
-            // Render row header button
-            let (head_rect, head_resp) = row.col(|ui| {
-                // Calculate the position where values start.
-                row_elem_start = ui.max_rect().right_top();
+            if !self.style.hide_index_column {
+                // Render row header button
+                let (head_rect, head_resp) = row.col(|ui| {
+                    // Calculate the position where values start.
+                    row_elem_start = ui.max_rect().right_top();
 
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.separator();
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.separator();
 
-                    if has_any_sort {
+                        if has_any_sort {
+                            ui.monospace(
+                                RichText::from(f!(
+                                    "{:·>width$}",
+                                    row_id.0,
+                                    width = row_id_digits as usize
+                                ))
+                                .strong(),
+                            );
+                        } else {
+                            ui.monospace(
+                                RichText::from(f!(
+                                    "{:>width$}",
+                                    "",
+                                    width = row_id_digits as usize
+                                ))
+                                .strong(),
+                            );
+                        }
+
                         ui.monospace(
                             RichText::from(f!(
                                 "{:·>width$}",
-                                row_id.0,
-                                width = row_id_digits as usize
+                                vis_row.0 + 1,
+                                width = vis_row_digits as usize
                             ))
-                            .strong(),
+                            .weak(),
                         );
-                    } else {
-                        ui.monospace(
-                            RichText::from(f!("{:>width$}", "", width = row_id_digits as usize))
-                                .strong(),
-                        );
-                    }
-
-                    ui.monospace(
-                        RichText::from(f!(
-                            "{:·>width$}",
-                            vis_row.0 + 1,
-                            width = vis_row_digits as usize
-                        ))
-                        .weak(),
-                    );
+                    });
                 });
-            });
 
-            if check_mouse_dragging_selection(&head_rect, &head_resp) {
-                s.cci_sel_update_row(vis_row);
+                if check_mouse_dragging_selection(&head_rect, &head_resp) {
+                    s.cci_sel_update_row(vis_row);
+                }
             }
 
             /* -------------------------------- Columns Rendering ------------------------------- */
@@ -602,7 +617,8 @@ impl<'a, R, V: RowViewer<R>> Renderer<'a, R, V> {
 
                 /* --------------------------- Context Menu Rendering --------------------------- */
 
-                (resp.clone() | head_resp.clone()).context_menu(|ui| {
+                (resp.clone()).context_menu(|ui| {
+                    //(resp.clone() | head_resp.clone()).context_menu(|ui| {
                     response_consumed = true;
                     ui.set_min_size(egui::vec2(250., 10.));
 
